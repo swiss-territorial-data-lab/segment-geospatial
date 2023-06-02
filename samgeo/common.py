@@ -941,6 +941,7 @@ def tiff_to_tiff(
     dst_fp,
     func,
     data_to_rgb=chw_to_hwc,
+    # sample_size=(2048, 2048),
     sample_size=(512, 512),
     sample_resize=None,
     bound=128,
@@ -952,14 +953,20 @@ def tiff_to_tiff(
     with rasterio.open(src_fp) as src:
         profile = src.profile
 
+        # !!!!Addition!!!! Crop image
+        xsize, ysize = 1026, 1026
+        profile.update({'height':xsize,'width':ysize}) 
+
         # Computer blocks
         rh, rw = profile["height"], profile["width"]
         sh, sw = sample_size
         bound = bound
+        print(sample_size, bound)
 
         resize_hw = sample_resize
+        print(resize_hw)
 
-        # Subdivide image into tiles
+        # Subdivide ibbbmage into tiles
         sample_grid = calculate_sample_grid(
             raster_h=rh, raster_w=rw, sample_h=sh, sample_w=sw, bound=bound
         )

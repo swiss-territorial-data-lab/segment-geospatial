@@ -134,7 +134,7 @@ class SamGeo:
                 mask_erode = (mask_erode > 0).astype(np.uint8)
                 edge_mask = mask - mask_erode
                 resulting_borders += edge_mask
-
+   
         resulting_mask = (resulting_mask > 0).astype(np.uint8)
         resulting_borders = (resulting_borders > 0).astype(np.uint8)
         resulting_mask_with_borders = resulting_mask - resulting_borders
@@ -188,8 +188,11 @@ class SamGeo:
                     mask_multiplier=mask_multiplier,
                     **kwargs,
                 )
-
+            
+            # !!!! Addition !!!!! Subsample tiles
             image = cv2.imread(source)
+            image = image[0:1026,0:1026]
+
         elif isinstance(source, np.ndarray):
             image = source
         else:
@@ -201,7 +204,6 @@ class SamGeo:
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
         self.batch = False
-
         if output is not None:
             # Save the masks to the output path. The output is either a binary mask or a mask of objects with unique values.
             self.save_masks(
@@ -247,7 +249,7 @@ class SamGeo:
         # Generate a mask of objects with unique values
         if unique:
             # Sort the masks by area in ascending order
-            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=False)
+            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=True)
 
             # Create an output image with the same size as the input image
             objects = np.zeros(
@@ -287,7 +289,6 @@ class SamGeo:
 
         objects = objects.astype(dtype)
         self.objects = objects
-
         if output is not None:  # Save the output image
             array_to_image(self.objects, output, self.source, **kwargs)
 
@@ -305,17 +306,15 @@ class SamGeo:
         """
 
         import matplotlib.pyplot as plt
-
         if self.batch:
             self.objects = cv2.imread(self.masks)
         else:
             if self.objects is None:
                 self.save_masks(foreground=foreground, **kwargs)
-
         plt.figure(figsize=figsize)
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
-        plt.show()
+        # plt.show()
 
     def show_anns(
         self,
