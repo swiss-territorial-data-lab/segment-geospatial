@@ -780,7 +780,6 @@ def bbox_to_xy(
         geojson = json.dumps(coords)
         gdf = gpd.read_file(geojson, driver="GeoJSON")
         coords = gdf.geometry.bounds.values.tolist()
-
     elif not isinstance(coords, list):
         raise ValueError("coords must be a list of coordinates.")
 
@@ -941,7 +940,7 @@ def tiff_to_tiff(
     dst_fp,
     func,
     data_to_rgb=chw_to_hwc,
-    # sample_size=(2048, 2048),
+    # sample_size=(2048, 2048),            # Modification of the tile size 
     sample_size=(512, 512),
     sample_resize=None,
     bound=128,
@@ -954,17 +953,15 @@ def tiff_to_tiff(
         profile = src.profile
 
         # !!!!Addition!!!! Crop image
-        xsize, ysize = 1026, 1026
-        profile.update({'height':xsize,'width':ysize}) 
+        # xsize, ysize = 1026, 1026
+        # profile.update({'height':xsize,'width':ysize}) 
 
         # Computer blocks
         rh, rw = profile["height"], profile["width"]
         sh, sw = sample_size
         bound = bound
-        print(sample_size, bound)
 
         resize_hw = sample_resize
-        print(resize_hw)
 
         # Subdivide ibbbmage into tiles
         sample_grid = calculate_sample_grid(
@@ -1051,7 +1048,7 @@ def tiff_to_image(
     return result[..., 0]
 
 
-def tiff_to_shapes(tiff_path, simplify_tolerance=None):
+def tiff_to_shapes(tiff_path, simplify_tolerance=0.1):
     from rasterio import features
 
     with rasterio.open(tiff_path) as src:
@@ -1060,6 +1057,7 @@ def tiff_to_shapes(tiff_path, simplify_tolerance=None):
         mask = band != 0
         shapes = features.shapes(band, mask=mask, transform=src.transform)
     result = [shapely.geometry.shape(shape) for shape, _ in shapes]
+    simplify_tolerance=0.1
     if simplify_tolerance is not None:
         result = [shape.simplify(tolerance=simplify_tolerance) for shape in result]
     return result
@@ -1081,7 +1079,7 @@ def draw_tile(source, lat0, lon0, lat1, lon1, zoom, filename, **kwargs):
     return image
 
 
-def raster_to_vector(source, output, simplify_tolerance=None, **kwargs):
+def raster_to_vector(source, output, simplify_tolerance=0.1, **kwargs):
     """Vectorize a raster dataset.
 
     Args:
@@ -1094,7 +1092,6 @@ def raster_to_vector(source, output, simplify_tolerance=None, **kwargs):
 
     with rasterio.open(source) as src:
         band = src.read()
-
         mask = band != 0
         shapes = features.shapes(band, mask=mask, transform=src.transform)
 
@@ -1102,6 +1099,7 @@ def raster_to_vector(source, output, simplify_tolerance=None, **kwargs):
         {"geometry": shapely.geometry.shape(shape), "properties": {"value": value}}
         for shape, value in shapes
     ]
+    simplify_tolerance=0.1
     if simplify_tolerance is not None:
         for i in fc:
             i["geometry"] = i["geometry"].simplify(tolerance=simplify_tolerance)
@@ -1109,10 +1107,12 @@ def raster_to_vector(source, output, simplify_tolerance=None, **kwargs):
     gdf = gpd.GeoDataFrame.from_features(fc)
     if src.crs is not None:
         gdf.set_crs(crs=src.crs, inplace=True)
+    # gdf['score'] = 0
+    # gdf['iou'] = 0 
     gdf.to_file(output, **kwargs)
 
 
-def raster_to_gpkg(tiff_path, output, simplify_tolerance=None, **kwargs):
+def raster_to_gpkg(tiff_path, output, simplify_tolerance=0.1, **kwargs):
     """Convert a tiff file to a gpkg file.
 
     Args:
@@ -1128,7 +1128,7 @@ def raster_to_gpkg(tiff_path, output, simplify_tolerance=None, **kwargs):
     raster_to_vector(tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs)
 
 
-def raster_to_shp(tiff_path, output, simplify_tolerance=None, **kwargs):
+def raster_to_shp(tiff_path, output, simplify_tolerance=0.1, **kwargs):
     """Convert a tiff file to a shapefile.
 
     Args:
@@ -1144,7 +1144,7 @@ def raster_to_shp(tiff_path, output, simplify_tolerance=None, **kwargs):
     raster_to_vector(tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs)
 
 
-def raster_to_geojson(tiff_path, output, simplify_tolerance=None, **kwargs):
+def raster_to_geojson(tiff_path, output, simplify_tolerance=0.1, **kwargs):
     """Convert a tiff file to a GeoJSON file.
 
     Args:

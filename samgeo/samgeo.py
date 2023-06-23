@@ -6,6 +6,7 @@ import os
 import cv2
 import torch
 import numpy as np
+import pandas as pd
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
 from .common import *
@@ -189,9 +190,7 @@ class SamGeo:
                     **kwargs,
                 )
             
-            # !!!! Addition !!!!! Subsample tiles
             image = cv2.imread(source)
-            image = image[0:1026,0:1026]
 
         elif isinstance(source, np.ndarray):
             image = source
@@ -258,10 +257,18 @@ class SamGeo:
                     sorted_masks[0]["segmentation"].shape[1],
                 )
             )
+
+            # Get detection score and iou for each detection mask !!! NOT WORKING YET !!! 
+            score = [] 
+            iou = [] 
             # Assign a unique value to each object
             for index, ann in enumerate(sorted_masks):
                 m = ann["segmentation"]
                 objects[m] = index + 1
+                score.append(ann["stability_score"])
+                iou.append(ann["predicted_iou"])
+            df = pd.DataFrame({'score': score, 'IOU': iou})
+            # print(df)
 
         # Generate a binary mask
         else:
@@ -338,6 +345,7 @@ class SamGeo:
         import matplotlib.pyplot as plt
 
         anns = self.masks
+        # print(anns)
 
         if self.image is None:
             print("Please run generate() first.")
@@ -419,7 +427,7 @@ class SamGeo:
         mask_multiplier=255,
         dtype=np.float32,
         vector=None,
-        simplify_tolerance=None,
+        simplify_tolerance=0.1,
         **kwargs,
     ):
         """Save the predicted mask to the output path.
@@ -596,7 +604,7 @@ class SamGeo:
         image = draw_tile(source, pt1[0], pt1[1], pt2[0], pt2[1], zoom, dist)
         return image
 
-    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=None, **kwargs):
+    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -610,7 +618,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=None, **kwargs):
+    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -624,7 +632,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=None, **kwargs):
+    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
         """Convert a tiff file to a shapefile.
 
         Args:
@@ -638,7 +646,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=None, **kwargs):
+    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
         """Convert a tiff file to a GeoJSON file.
 
         Args:
