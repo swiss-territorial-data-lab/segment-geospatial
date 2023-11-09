@@ -13,6 +13,8 @@ private/
 **/*.jpg
 **/*.png
 **/*.csv
+**/*.pt
+docs/examples/*.geojson
 
 # C extensions
 *.so
@@ -116,3 +118,4 @@ ENV/
 .vscode/
 docs/examples/segment.cpg
 docs/examples/segment.prj
+docs/changelog_update.md

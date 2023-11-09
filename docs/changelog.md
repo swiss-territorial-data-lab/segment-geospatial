@@ -1,5 +1,127 @@
 # Changelog
 
+## v0.10.2 - Nov 7, 2023
+
+**What's Changed**
+
+-   Add JOSS paper by @giswqs in [#197](https://github.com/opengeos/segment-geospatial/pull/197)
+-   Add notebook for using Maxar Open Data by @giswqs in [#198](https://github.com/opengeos/segment-geospatial/pull/198)
+-   Add checkpoint to textsam.LangSAM() by @forestbat in [#204](https://github.com/opengeos/segment-geospatial/pull/204)
+-   Add workshop notebook by @giswqs in [#209](https://github.com/opengeos/segment-geospatial/pull/209)
+
+**New Contributors**
+
+-   @forestbat made their first contribution in [#204](https://github.com/opengeos/segment-geospatial/pull/204)
+
+**Full Changelog**: [v0.10.1...v0.10.2](https://github.com/opengeos/segment-geospatial/compare/v0.10.1...v0.10.2)
+
+## v0.10.1 - Sep 1, 2023
+
+**What's Changed**
+
+-   Fix basemap issue by @giswqs in [#190](https://github.com/opengeos/segment-geospatial/pull/190)
+
+**Full Changelog**: [v0.10.0...v0.10.1)](https://github.com/opengeos/segment-geospatial/compare/v0.10.0...v0.10.1)
+
+## v0.10.0 - Aug 24, 2023
+
+### What's Changed
+
+-   Added fastsam module by @giswqs #167
+-   Update optional dependencies by @giswqs in #68
+-   Improve contributing guidelines by @giswqs in #169
+-   [FIX] Added missing conversions from BGR to RGB by @lbferreira in #171
+-   Address JOSS review comments by @giswqs in #175
+
+### New Contributors
+
+-   @lbferreira made their first contribution in #171
+
+## v0.9.1 - Aug 14, 2023
+
+**New Features**
+
+-   Added support for HQ-SAM (#161)
+-   Added HQ-SAM notebooks (#162)
+
+## v0.9.0 - Aug 6, 2023
+
+**New Features**
+
+-   Added support for multiple input boxes (#159)
+
+**Improvements**
+
+-   UpdateD groundingdino installation (#147)
+-   Updated README (#152)
+
+## v0.8.5 - Jul 19, 2023
+
+**Improvements**
+
+-   Updated installation docs (#146)
+-   Updated leafmap and localtileserver to dependencies (#146)
+-   Added info about libgl1 dependency install on Linux systems (#141)
+-   Fixed save_masks bug without source image (#139)
+
+## v0.8.4 - Jul 5, 2023
+
+**Improvements**
+
+-   Fixed model download bug (#136)
+-   Added legal notice (#133)
+-   Fixed image source bug for show_anns (#131)
+-   Improved exception handling for LangSAM GUI (#130)
+-   Added to return pixel coordinates of masks (#129)
+-   Added text_sam to docs (#123)
+-   Fixed file deletion error on Windows (#122)
+-   Fixed mask bug in text_sam/predict when the input is PIL image (#117)
+
+## v0.8.3 - Jun 20, 2023
+
+**New Features**
+
+-   Added support for batch segmentation (#116)
+-   Added swimming pools example (#106)
+
+**Improvements**
+
+-   Removed 'flag' and 'param' arguments (#112)
+-   Used sorted function instead of if statements (#109)
+
+## v0.8.2 - Jun 14, 2023
+
+**New Features**
+
+-   Added regularized option for vector output (#104)
+-   Added text prompt GUI (#80)
+
+**Improvements**
+
+-   Added more deep learning resources (#90)
+-   Use the force_filename parameter with hf_hub_download() (#93)
+-   Fixed typo (#94)
+
+## v0.8.1 - May 24, 2023
+
+**Improvements**
+
+-   Added huggingface_hub and remove onnx (#87)
+-   Added more demos to docs (#82)
+
+## v0.8.0 - May 24, 2023
+
+**New Features**
+
+-   Added support for using text prompts with SAM (#73)
+-   Added text prompt GUI (#80)
+
+**Improvements**
+
+-   Improved text prompt notebook (#79)
+-   Fixed notebook typos (#78)
+-   Added ArcGIS tutorial to docs (#72)
+
 ## v0.7.0 - May 20, 2023
 
 **New Features**

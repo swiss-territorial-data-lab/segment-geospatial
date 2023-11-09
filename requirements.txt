@@ -1,12 +1,15 @@
 segment-anything-py
+segment-anything-hq
 opencv-python 
 pycocotools 
 matplotlib 
-onnxruntime; python_version < '3.11'
-onnx
+huggingface_hub
 geopandas
 rasterio
 tqdm
 gdown
 xyzservices
 pyproj
+leafmap
+localtileserver
+timm

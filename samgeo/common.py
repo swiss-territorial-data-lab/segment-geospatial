@@ -14,6 +14,8 @@ import rasterio
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
+os.environ["GOOGLE_MAPS_API_KEY"] = "API-KEY"
+
 
 def is_colab():
     """Tests if the code is being executed within Google Colab."""
@@ -178,7 +180,70 @@ def download_file(
     return os.path.abspath(output)
 
 
-def download_checkpoint(url=None, output=None, overwrite=False, **kwargs):
+def download_checkpoint(model_type="vit_h", checkpoint_dir=None, hq=False):
+    """Download the SAM model checkpoint.
+
+    Args:
+        model_type (str, optional): The model type. Can be one of ['vit_h', 'vit_l', 'vit_b'].
+            Defaults to 'vit_h'. See https://bit.ly/3VrpxUh for more details.
+        checkpoint_dir (str, optional): The checkpoint_dir directory. Defaults to None, "~/.cache/torch/hub/checkpoints".
+        hq (bool, optional): Whether to use HQ-SAM model (https://github.com/SysCV/sam-hq). Defaults to False.
+    """
+
+    if not hq:
+        model_types = {
+            "vit_h": {
+                "name": "sam_vit_h_4b8939.pth",
+                "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+            },
+            "vit_l": {
+                "name": "sam_vit_l_0b3195.pth",
+                "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+            },
+            "vit_b": {
+                "name": "sam_vit_b_01ec64.pth",
+                "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+            },
+        }
+    else:
+        model_types = {
+            "vit_h": {
+                "name": "sam_hq_vit_h.pth",
+                "url": "https://drive.google.com/file/d/1qobFYrI4eyIANfBSmYcGuWRaSIXfMOQ8/view?usp=sharing",
+            },
+            "vit_l": {
+                "name": "sam_hq_vit_l.pth",
+                "url": "https://drive.google.com/file/d/1Uk17tDKX1YAKas5knI4y9ZJCo0lRVL0G/view?usp=sharing",
+            },
+            "vit_b": {
+                "name": "sam_hq_vit_b.pth",
+                "url": "https://drive.google.com/file/d/11yExZLOve38kRZPfRx_MRxfIAKmfMY47/view?usp=sharing",
+            },
+            "vit_tiny": {
+                "name": "sam_hq_vit_tiny.pth",
+                "url": "https://huggingface.co/lkeab/hq-sam/resolve/main/sam_hq_vit_tiny.pth",
+            },
+        }
+
+    if model_type not in model_types:
+        raise ValueError(
+            f"Invalid model_type: {model_type}. It must be one of {', '.join(model_types)}"
+        )
+
+    if checkpoint_dir is None:
+        checkpoint_dir = os.environ.get(
+            "TORCH_HOME", os.path.expanduser("~/.cache/torch/hub/checkpoints")
+        )
+
+    checkpoint = os.path.join(checkpoint_dir, model_types[model_type]["name"])
+    if not os.path.exists(checkpoint):
+        print(f"Model checkpoint for {model_type} not found.")
+        url = model_types[model_type]["url"]
+        download_file(url, checkpoint)
+    return checkpoint
+
+
+def download_checkpoint_legacy(url=None, output=None, overwrite=False, **kwargs):
     """Download a checkpoint from URL. It can be one of the following: sam_vit_h_4b8939.pth, sam_vit_l_0b3195.pth, sam_vit_b_01ec64.pth.
 
     Args:
@@ -512,10 +577,8 @@ def tms_to_geotiff(
     ):
         x0, y0 = deg2num(lat0, lon0, zoom)
         x1, y1 = deg2num(lat1, lon1, zoom)
-        if x0 > x1:
-            x0, x1 = x1, x0
-        if y0 > y1:
-            y0, y1 = y1, y0
+        x0, x1 = sorted([x0, x1])
+        y0, y1 = sorted([y0, y1])
         corners = tuple(
             itertools.product(
                 range(math.floor(x0), math.ceil(x1)),
@@ -753,10 +816,101 @@ def coords_to_xy(
     return result
 
 
+def boxes_to_vector(coords, src_crs, dst_crs="EPSG:4326", output=None, **kwargs):
+    """
+    Convert a list of bounding box coordinates to vector data.
+
+    Args:
+        coords (list): A list of bounding box coordinates in the format [[left, top, right, bottom], [left, top, right, bottom], ...].
+        src_crs (int or str): The EPSG code or proj4 string representing the source coordinate reference system (CRS) of the input coordinates.
+        dst_crs (int or str, optional): The EPSG code or proj4 string representing the destination CRS to reproject the data (default is "EPSG:4326").
+        output (str or None, optional): The full file path (including the directory and filename without the extension) where the vector data should be saved.
+                                       If None (default), the function returns the GeoDataFrame without saving it to a file.
+        **kwargs: Additional keyword arguments to pass to geopandas.GeoDataFrame.to_file() when saving the vector data.
+
+    Returns:
+        geopandas.GeoDataFrame or None: The GeoDataFrame with the converted vector data if output is None, otherwise None if the data is saved to a file.
+    """
+
+    from shapely.geometry import box
+
+    # Create a list of Shapely Polygon objects based on the provided coordinates
+    polygons = [box(*coord) for coord in coords]
+
+    # Create a GeoDataFrame with the Shapely Polygon objects
+    gdf = gpd.GeoDataFrame({"geometry": polygons}, crs=src_crs)
+
+    # Reproject the GeoDataFrame to the specified EPSG code
+    gdf_reprojected = gdf.to_crs(dst_crs)
+
+    if output is not None:
+        gdf_reprojected.to_file(output, **kwargs)
+    else:
+        return gdf_reprojected
+
+
+def rowcol_to_xy(
+    src_fp,
+    rows=None,
+    cols=None,
+    boxes=None,
+    zs=None,
+    offset="center",
+    output=None,
+    dst_crs="EPSG:4326",
+    **kwargs,
+):
+    """Converts a list of (row, col) coordinates to (x, y) coordinates.
+
+    Args:
+        src_fp (str): The source raster file path.
+        rows (list, optional): A list of row coordinates. Defaults to None.
+        cols (list, optional): A list of col coordinates. Defaults to None.
+        boxes (list, optional): A list of (row, col) coordinates in the format of [[left, top, right, bottom], [left, top, right, bottom], ...]
+        zs: zs (list or float, optional): Height associated with coordinates. Primarily used for RPC based coordinate transformations.
+        offset (str, optional): Determines if the returned coordinates are for the center of the pixel or for a corner.
+        output (str, optional): The output vector file path. Defaults to None.
+        dst_crs (str, optional): The destination CRS. Defaults to "EPSG:4326".
+        **kwargs: Additional keyword arguments to pass to rasterio.transform.xy.
+
+    Returns:
+        A list of (x, y) coordinates.
+    """
+
+    if boxes is not None:
+        rows = []
+        cols = []
+
+        for box in boxes:
+            rows.append(box[1])
+            rows.append(box[3])
+            cols.append(box[0])
+            cols.append(box[2])
+
+    if rows is None or cols is None:
+        raise ValueError("rows and cols must be provided.")
+
+    with rasterio.open(src_fp) as src:
+        xs, ys = rasterio.transform.xy(src.transform, rows, cols, zs, offset, **kwargs)
+        src_crs = src.crs
+
+    if boxes is None:
+        return [[x, y] for x, y in zip(xs, ys)]
+    else:
+        result = [[xs[i], ys[i + 1], xs[i + 1], ys[i]] for i in range(0, len(xs), 2)]
+
+        if output is not None:
+            boxes_to_vector(result, src_crs, dst_crs, output)
+        else:
+            return result
+
+
 def bbox_to_xy(
     src_fp: str, coords: list, coord_crs: str = "epsg:4326", **kwargs
 ) -> list:
     """Converts a list of coordinates to pixel coordinates, i.e., (col, row) coordinates.
+        Note that map bbox coords is [minx, miny, maxx, maxy] from bottomleft to topright
+        While rasterio bbox coords is [minx, max, maxx, min] from topleft to bottomright
 
     Args:
         src_fp (str): The source raster file path.
@@ -764,7 +918,7 @@ def bbox_to_xy(
         coord_crs (str, optional): The coordinate CRS of the input coordinates. Defaults to "epsg:4326".
 
     Returns:
-        list: A list of pixel coordinates in the format of [[minx, miny, maxx, maxy], ...]
+        list: A list of pixel coordinates in the format of [[minx, maxy, maxx, miny], ...] from top left to bottom right.
     """
 
     if isinstance(coords, str):
@@ -826,7 +980,9 @@ def bbox_to_xy(
             and maxx < width
             and maxy < height
         ):
-            result.append(coord)
+            # Note that map bbox coords is [minx, miny, maxx, maxy] from bottomleft to topright
+            # While rasterio bbox coords is [minx, max, maxx, min] from topleft to bottomright
+            result.append([minx, maxy, maxx, miny])
 
     if len(result) == 0:
         print("No valid pixel coordinates found.")
@@ -901,7 +1057,7 @@ def calculate_sample_grid(raster_h, raster_w, sample_h, sample_w, bound):
 
     for y in range(-bound, raster_h, h):
         for x in range(-bound, raster_w, w):
-            rigth_x_bound = max(bound, x + width - raster_w)
+            right_x_bound = max(bound, x + width - raster_w)
             bottom_y_bound = max(bound, y + height - raster_h)
 
             blocks.append(
@@ -910,7 +1066,7 @@ def calculate_sample_grid(raster_h, raster_w, sample_h, sample_w, bound):
                     "y": y,
                     "height": height,
                     "width": width,
-                    "bounds": [[bound, bottom_y_bound], [bound, rigth_x_bound]],
+                    "bounds": [[bound, bottom_y_bound], [bound, right_x_bound]],
                 }
             )
     return blocks
@@ -960,7 +1116,6 @@ def tiff_to_tiff(
         rh, rw = profile["height"], profile["width"]
         sh, sw = sample_size
         bound = bound
-
         resize_hw = sample_resize
 
         # Subdivide ibbbmage into tiles
@@ -1079,7 +1234,7 @@ def draw_tile(source, lat0, lon0, lat1, lon1, zoom, filename, **kwargs):
     return image
 
 
-def raster_to_vector(source, output, simplify_tolerance=0.1, **kwargs):
+def raster_to_vector(source, output, simplify_tolerance=0.1, dst_crs=None, **kwargs):
     """Vectorize a raster dataset.
 
     Args:
@@ -1107,8 +1262,10 @@ def raster_to_vector(source, output, simplify_tolerance=0.1, **kwargs):
     gdf = gpd.GeoDataFrame.from_features(fc)
     if src.crs is not None:
         gdf.set_crs(crs=src.crs, inplace=True)
-    # gdf['score'] = 0
-    # gdf['iou'] = 0 
+
+    if dst_crs is not None:
+        gdf = gdf.to_crs(dst_crs)
+
     gdf.to_file(output, **kwargs)
 
 
@@ -1254,6 +1411,7 @@ def array_to_image(
                 compress = src.compression
 
         # Determine the minimum and maximum values in the array
+
         min_value = np.min(array)
         max_value = np.max(array)
 
@@ -1395,7 +1553,7 @@ def show_points(
     plt.show()
 
 
-def show_box(image, box, ax):
+def show_box(box, ax):
     ax = plt.gca()
     x0, y0 = box[0], box[1]
     w, h = box[2] - box[0], box[3] - box[1]
@@ -1580,7 +1738,10 @@ def update_package(out_dir=None, keep=False, **kwargs):
 
         if not keep:
             shutil.rmtree(pkg_dir)
-            os.remove(filename)
+            try:
+                os.remove(filename)
+            except:
+                pass
 
         print("Package updated successfully.")
 
@@ -1620,7 +1781,7 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
 
     # Skip the image layer if localtileserver is not available
     try:
-        m.add_raster(sam.image, layer_name="Image")
+        m.add_raster(sam.source, layer_name="Image")
     except:
         pass
 
@@ -1721,11 +1882,28 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
         layout=widgets.Layout(width=widget_width, padding=padding),
         style=style,
     )
+
+    rectangular = widgets.Checkbox(
+        value=False,
+        description="Regularize",
+        layout=widgets.Layout(width="130px", padding=padding),
+        style=style,
+    )
+
+    colorpicker = widgets.ColorPicker(
+        concise=False,
+        description="Color",
+        value="#ffff00",
+        layout=widgets.Layout(width="140px", padding=padding),
+        style=style,
+    )
+
     buttons = widgets.VBox(
         [
             radio_buttons,
             widgets.HBox([fg_count, bg_count]),
             opacity_slider,
+            widgets.HBox([rectangular, colorpicker]),
             widgets.HBox(
                 [segment_button, save_button, reset_button],
                 layout=widgets.Layout(padding="0px 4px 0px 4px"),
@@ -1926,7 +2104,7 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
 
     def segment_button_click(change):
         if change["new"]:
-            reset_button.value = False
+            segment_button.value = False
             with output:
                 output.clear_output()
                 if len(m.fg_markers) == 0:
@@ -1957,11 +2135,16 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
                         )
                         if m.find_layer("Masks") is not None:
                             m.remove_layer(m.find_layer("Masks"))
+                        if m.find_layer("Regularized") is not None:
+                            m.remove_layer(m.find_layer("Regularized"))
 
                         if hasattr(sam, "prediction_fp") and os.path.exists(
                             sam.prediction_fp
                         ):
-                            os.remove(sam.prediction_fp)
+                            try:
+                                os.remove(sam.prediction_fp)
+                            except:
+                                pass
 
                         # Skip the image layer if localtileserver is not available
                         try:
@@ -1973,6 +2156,21 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
                                 layer_name="Masks",
                                 zoom_to_layer=False,
                             )
+
+                            if rectangular.value:
+                                vector = filename.replace(".tif", ".gpkg")
+                                vector_rec = filename.replace(".tif", "_rect.gpkg")
+                                raster_to_vector(filename, vector)
+                                regularize(vector, vector_rec)
+                                vector_style = {"color": colorpicker.value}
+                                m.add_vector(
+                                    vector_rec,
+                                    layer_name="Regularized",
+                                    style=vector_style,
+                                    info_mode=None,
+                                    zoom_to_layer=False,
+                                )
+
                         except:
                             pass
                         output.clear_output()
@@ -1991,7 +2189,10 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
                     filename = chooser.selected
                     shutil.copy(sam.prediction_fp, filename)
                     vector = filename.replace(".tif", ".gpkg")
-                    raster_to_gpkg(filename, vector)
+                    raster_to_vector(filename, vector)
+                    if rectangular.value:
+                        vector_rec = filename.replace(".tif", "_rect.gpkg")
+                        regularize(vector, vector_rec)
 
                     fg_points = [
                         [marker.location[1], marker.location[0]]
@@ -2047,9 +2248,13 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
             segment_button.value = False
             reset_button.value = False
             opacity_slider.value = 0.5
+            rectangular.value = False
+            colorpicker.value = "#ffff00"
             output.clear_output()
             try:
                 m.remove_layer(m.find_layer("Masks"))
+                if m.find_layer("Regularized") is not None:
+                    m.remove_layer(m.find_layer("Regularized"))
                 m.clear_drawings()
                 if hasattr(m, "fg_markers"):
                     m.user_rois = None
@@ -2059,7 +2264,10 @@ def sam_map_gui(sam, basemap="SATELLITE", repeat_mode=True, out_dir=None, **kwar
                     m.bg_layer.clear_layers()
                     fg_count.value = 0
                     bg_count.value = 0
-                os.remove(sam.prediction_fp)
+                try:
+                    os.remove(sam.prediction_fp)
+                except:
+                    pass
             except:
                 pass
 
@@ -2155,7 +2363,7 @@ def show_canvas(image, fg_color=(0, 255, 0), bg_color=(0, 0, 255), radius=5):
     right_clicks = []
 
     # Create a mouse callback function
-    def get_mouse_coordinates(event, x, y, flags, param):
+    def get_mouse_coordinates(event, x, y):
         if event == cv2.EVENT_LBUTTONDOWN:
             # Append the coordinates to the mouse_clicks list
             left_clicks.append((x, y))
@@ -2192,3 +2400,576 @@ def show_canvas(image, fg_color=(0, 255, 0), bg_color=(0, 0, 255), radius=5):
     cv2.destroyAllWindows()
 
     return left_clicks, right_clicks
+
+
+def install_package(package):
+    """Install a Python package.
+
+    Args:
+        package (str | list): The package name or a GitHub URL or a list of package names or GitHub URLs.
+    """
+    import subprocess
+
+    if isinstance(package, str):
+        packages = [package]
+
+    for package in packages:
+        if package.startswith("https://github.com"):
+            package = f"git+{package}"
+
+        # Execute pip install command and show output in real-time
+        command = f"pip install {package}"
+        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE)
+
+        # Print output in real-time
+        while True:
+            output = process.stdout.readline()
+            if output == b"" and process.poll() is not None:
+                break
+            if output:
+                print(output.decode("utf-8").strip())
+
+        # Wait for process to complete
+        process.wait()
+
+
+def text_sam_gui(
+    sam,
+    basemap="SATELLITE",
+    out_dir=None,
+    box_threshold=0.25,
+    text_threshold=0.25,
+    cmap="viridis",
+    opacity=0.5,
+    **kwargs,
+):
+    """Display the SAM Map GUI.
+
+    Args:
+        sam (SamGeo):
+        basemap (str, optional): The basemap to use. Defaults to "SATELLITE".
+        out_dir (str, optional): The output directory. Defaults to None.
+
+    """
+    try:
+        import shutil
+        import tempfile
+        import leafmap
+        import ipyleaflet
+        import ipyevents
+        import ipywidgets as widgets
+        import leafmap.colormaps as cm
+        from ipyfilechooser import FileChooser
+    except ImportError:
+        raise ImportError(
+            "The sam_map function requires the leafmap package. Please install it first."
+        )
+
+    if out_dir is None:
+        out_dir = tempfile.gettempdir()
+
+    m = leafmap.Map(**kwargs)
+    m.default_style = {"cursor": "crosshair"}
+    m.add_basemap(basemap, show=False)
+
+    # Skip the image layer if localtileserver is not available
+    try:
+        m.add_raster(sam.source, layer_name="Image")
+    except:
+        pass
+
+    widget_width = "280px"
+    button_width = "90px"
+    padding = "0px 4px 0px 4px"  # upper, right, bottom, left
+    style = {"description_width": "initial"}
+
+    toolbar_button = widgets.ToggleButton(
+        value=True,
+        tooltip="Toolbar",
+        icon="gear",
+        layout=widgets.Layout(width="28px", height="28px", padding="0px 0px 0px 4px"),
+    )
+
+    close_button = widgets.ToggleButton(
+        value=False,
+        tooltip="Close the tool",
+        icon="times",
+        button_style="primary",
+        layout=widgets.Layout(height="28px", width="28px", padding="0px 0px 0px 4px"),
+    )
+
+    text_prompt = widgets.Text(
+        description="Text prompt:",
+        style=style,
+        layout=widgets.Layout(width=widget_width, padding=padding),
+    )
+
+    box_slider = widgets.FloatSlider(
+        description="Box threshold:",
+        min=0,
+        max=1,
+        value=box_threshold,
+        step=0.01,
+        readout=True,
+        continuous_update=True,
+        layout=widgets.Layout(width=widget_width, padding=padding),
+        style=style,
+    )
+
+    text_slider = widgets.FloatSlider(
+        description="Text threshold:",
+        min=0,
+        max=1,
+        step=0.01,
+        value=text_threshold,
+        readout=True,
+        continuous_update=True,
+        layout=widgets.Layout(width=widget_width, padding=padding),
+        style=style,
+    )
+
+    cmap_dropdown = widgets.Dropdown(
+        description="Palette:",
+        options=cm.list_colormaps(),
+        value=cmap,
+        style=style,
+        layout=widgets.Layout(width=widget_width, padding=padding),
+    )
+
+    opacity_slider = widgets.FloatSlider(
+        description="Opacity:",
+        min=0,
+        max=1,
+        value=opacity,
+        readout=True,
+        continuous_update=True,
+        layout=widgets.Layout(width=widget_width, padding=padding),
+        style=style,
+    )
+
+    def opacity_changed(change):
+        if change["new"]:
+            if hasattr(m, "layer_name"):
+                mask_layer = m.find_layer(m.layer_name)
+                if mask_layer is not None:
+                    mask_layer.interact(opacity=opacity_slider.value)
+
+    opacity_slider.observe(opacity_changed, "value")
+
+    rectangular = widgets.Checkbox(
+        value=False,
+        description="Regularize",
+        layout=widgets.Layout(width="130px", padding=padding),
+        style=style,
+    )
+
+    colorpicker = widgets.ColorPicker(
+        concise=False,
+        description="Color",
+        value="#ffff00",
+        layout=widgets.Layout(width="140px", padding=padding),
+        style=style,
+    )
+
+    segment_button = widgets.ToggleButton(
+        description="Segment",
+        value=False,
+        button_style="primary",
+        layout=widgets.Layout(padding=padding),
+    )
+
+    save_button = widgets.ToggleButton(
+        description="Save", value=False, button_style="primary"
+    )
+
+    reset_button = widgets.ToggleButton(
+        description="Reset", value=False, button_style="primary"
+    )
+    segment_button.layout.width = button_width
+    save_button.layout.width = button_width
+    reset_button.layout.width = button_width
+
+    output = widgets.Output(
+        layout=widgets.Layout(
+            width=widget_width, padding=padding, max_width=widget_width
+        )
+    )
+
+    toolbar_header = widgets.HBox()
+    toolbar_header.children = [close_button, toolbar_button]
+    toolbar_footer = widgets.VBox()
+    toolbar_footer.children = [
+        text_prompt,
+        box_slider,
+        text_slider,
+        cmap_dropdown,
+        opacity_slider,
+        widgets.HBox([rectangular, colorpicker]),
+        widgets.HBox(
+            [segment_button, save_button, reset_button],
+            layout=widgets.Layout(padding="0px 4px 0px 4px"),
+        ),
+        output,
+    ]
+    toolbar_widget = widgets.VBox()
+    toolbar_widget.children = [toolbar_header, toolbar_footer]
+
+    toolbar_event = ipyevents.Event(
+        source=toolbar_widget, watched_events=["mouseenter", "mouseleave"]
+    )
+
+    def handle_toolbar_event(event):
+        if event["type"] == "mouseenter":
+            toolbar_widget.children = [toolbar_header, toolbar_footer]
+        elif event["type"] == "mouseleave":
+            if not toolbar_button.value:
+                toolbar_widget.children = [toolbar_button]
+                toolbar_button.value = False
+                close_button.value = False
+
+    toolbar_event.on_dom_event(handle_toolbar_event)
+
+    def toolbar_btn_click(change):
+        if change["new"]:
+            close_button.value = False
+            toolbar_widget.children = [toolbar_header, toolbar_footer]
+        else:
+            if not close_button.value:
+                toolbar_widget.children = [toolbar_button]
+
+    toolbar_button.observe(toolbar_btn_click, "value")
+
+    def close_btn_click(change):
+        if change["new"]:
+            toolbar_button.value = False
+            if m.toolbar_control in m.controls:
+                m.remove_control(m.toolbar_control)
+            toolbar_widget.close()
+
+    close_button.observe(close_btn_click, "value")
+
+    def segment_button_click(change):
+        if change["new"]:
+            segment_button.value = False
+            with output:
+                output.clear_output()
+                if len(text_prompt.value) == 0:
+                    print("Please enter a text prompt first.")
+                elif sam.source is None:
+                    print("Please run sam.set_image() first.")
+                else:
+                    print("Segmenting...")
+                    layer_name = text_prompt.value.replace(" ", "_")
+                    filename = os.path.join(
+                        out_dir, f"{layer_name}_{random_string()}.tif"
+                    )
+                    try:
+                        sam.predict(
+                            sam.source,
+                            text_prompt.value,
+                            box_slider.value,
+                            text_slider.value,
+                            output=filename,
+                        )
+                        sam.output = filename
+                        if m.find_layer(layer_name) is not None:
+                            m.remove_layer(m.find_layer(layer_name))
+                        if m.find_layer(f"{layer_name}_rect") is not None:
+                            m.remove_layer(m.find_layer(f"{layer_name} Regularized"))
+                    except Exception as e:
+                        output.clear_output()
+                        print(e)
+                    if os.path.exists(filename):
+                        try:
+                            m.add_raster(
+                                filename,
+                                layer_name=layer_name,
+                                palette=cmap_dropdown.value,
+                                opacity=opacity_slider.value,
+                                nodata=0,
+                                zoom_to_layer=False,
+                            )
+                            m.layer_name = layer_name
+
+                            if rectangular.value:
+                                vector = filename.replace(".tif", ".gpkg")
+                                vector_rec = filename.replace(".tif", "_rect.gpkg")
+                                raster_to_vector(filename, vector)
+                                regularize(vector, vector_rec)
+                                vector_style = {"color": colorpicker.value}
+                                m.add_vector(
+                                    vector_rec,
+                                    layer_name=f"{layer_name} Regularized",
+                                    style=vector_style,
+                                    info_mode=None,
+                                    zoom_to_layer=False,
+                                )
+
+                            output.clear_output()
+                        except Exception as e:
+                            print(e)
+
+    segment_button.observe(segment_button_click, "value")
+
+    def filechooser_callback(chooser):
+        with output:
+            if chooser.selected is not None:
+                try:
+                    filename = chooser.selected
+                    shutil.copy(sam.output, filename)
+                    vector = filename.replace(".tif", ".gpkg")
+                    raster_to_vector(filename, vector)
+                    if rectangular.value:
+                        vector_rec = filename.replace(".tif", "_rect.gpkg")
+                        regularize(vector, vector_rec)
+                except Exception as e:
+                    print(e)
+
+                if hasattr(m, "save_control") and m.save_control in m.controls:
+                    m.remove_control(m.save_control)
+                    delattr(m, "save_control")
+                save_button.value = False
+
+    def save_button_click(change):
+        if change["new"]:
+            with output:
+                output.clear_output()
+                if not hasattr(m, "layer_name"):
+                    print("Please click the Segment button first.")
+                else:
+                    sandbox_path = os.environ.get("SANDBOX_PATH")
+                    filechooser = FileChooser(
+                        path=os.getcwd(),
+                        filename=f"{m.layer_name}.tif",
+                        sandbox_path=sandbox_path,
+                        layout=widgets.Layout(width="454px"),
+                    )
+                    filechooser.use_dir_icons = True
+                    filechooser.filter_pattern = ["*.tif"]
+                    filechooser.register_callback(filechooser_callback)
+                    save_control = ipyleaflet.WidgetControl(
+                        widget=filechooser, position="topright"
+                    )
+                    m.add_control(save_control)
+                    m.save_control = save_control
+
+        else:
+            if hasattr(m, "save_control") and m.save_control in m.controls:
+                m.remove_control(m.save_control)
+                delattr(m, "save_control")
+
+    save_button.observe(save_button_click, "value")
+
+    def reset_button_click(change):
+        if change["new"]:
+            segment_button.value = False
+            save_button.value = False
+            reset_button.value = False
+            opacity_slider.value = 0.5
+            box_slider.value = 0.25
+            text_slider.value = 0.25
+            cmap_dropdown.value = "viridis"
+            text_prompt.value = ""
+            output.clear_output()
+            try:
+                if hasattr(m, "layer_name") and m.find_layer(m.layer_name) is not None:
+                    m.remove_layer(m.find_layer(m.layer_name))
+                m.clear_drawings()
+            except:
+                pass
+
+    reset_button.observe(reset_button_click, "value")
+
+    toolbar_control = ipyleaflet.WidgetControl(
+        widget=toolbar_widget, position="topright"
+    )
+    m.add_control(toolbar_control)
+    m.toolbar_control = toolbar_control
+
+    return m
+
+
+def regularize(source, output=None, crs="EPSG:4326", **kwargs):
+    """Regularize a polygon GeoDataFrame.
+
+    Args:
+        source (str | gpd.GeoDataFrame): The input file path or a GeoDataFrame.
+        output (str, optional): The output file path. Defaults to None.
+
+
+    Returns:
+        gpd.GeoDataFrame: The output GeoDataFrame.
+    """
+    if isinstance(source, str):
+        gdf = gpd.read_file(source)
+    elif isinstance(source, gpd.GeoDataFrame):
+        gdf = source
+    else:
+        raise ValueError("The input source must be a GeoDataFrame or a file path.")
+
+    polygons = gdf.geometry.apply(lambda geom: geom.minimum_rotated_rectangle)
+    result = gpd.GeoDataFrame(geometry=polygons, data=gdf.drop("geometry", axis=1))
+
+    if crs is not None:
+        result.to_crs(crs, inplace=True)
+    if output is not None:
+        result.to_file(output, **kwargs)
+    else:
+        return result
+
+
+def split_raster(filename, out_dir, tile_size=256, overlap=0):
+    """Split a raster into tiles.
+
+    Args:
+        filename (str): The path or http URL to the raster file.
+        out_dir (str): The path to the output directory.
+        tile_size (int | tuple, optional): The size of the tiles. Can be an integer or a tuple of (width, height). Defaults to 256.
+        overlap (int, optional): The number of pixels to overlap between tiles. Defaults to 0.
+
+    Raises:
+        ImportError: Raised if GDAL is not installed.
+    """
+
+    try:
+        from osgeo import gdal
+    except ImportError:
+        raise ImportError(
+            "GDAL is required to use this function. Install it with `conda install gdal -c conda-forge`"
+        )
+
+    if isinstance(filename, str):
+        if filename.startswith("http"):
+            output = filename.split("/")[-1]
+            download_file(filename, output)
+            filename = output
+
+    # Open the input GeoTIFF file
+    ds = gdal.Open(filename)
+
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    if isinstance(tile_size, int):
+        tile_width = tile_size
+        tile_height = tile_size
+    elif isinstance(tile_size, tuple):
+        tile_width = tile_size[0]
+        tile_height = tile_size[1]
+
+    # Get the size of the input raster
+    width = ds.RasterXSize
+    height = ds.RasterYSize
+
+    # Calculate the number of tiles needed in both directions, taking into account the overlap
+    num_tiles_x = (width - overlap) // (tile_width - overlap) + int(
+        (width - overlap) % (tile_width - overlap) > 0
+    )
+    num_tiles_y = (height - overlap) // (tile_height - overlap) + int(
+        (height - overlap) % (tile_height - overlap) > 0
+    )
+
+    # Get the georeferencing information of the input raster
+    geotransform = ds.GetGeoTransform()
+
+    # Loop over all the tiles
+    for i in range(num_tiles_x):
+        for j in range(num_tiles_y):
+            # Calculate the pixel coordinates of the tile, taking into account the overlap and clamping to the edge of the raster
+            x_min = i * (tile_width - overlap)
+            y_min = j * (tile_height - overlap)
+            x_max = min(x_min + tile_width, width)
+            y_max = min(y_min + tile_height, height)
+
+            # Adjust the size of the last tile in each row and column to include any remaining pixels
+            if i == num_tiles_x - 1:
+                x_min = max(x_max - tile_width, 0)
+            if j == num_tiles_y - 1:
+                y_min = max(y_max - tile_height, 0)
+
+            # Calculate the size of the tile, taking into account the overlap
+            tile_width = x_max - x_min
+            tile_height = y_max - y_min
+
+            # Set the output file name
+            output_file = f"{out_dir}/tile_{i}_{j}.tif"
+
+            # Create a new dataset for the tile
+            driver = gdal.GetDriverByName("GTiff")
+            tile_ds = driver.Create(
+                output_file,
+                tile_width,
+                tile_height,
+                ds.RasterCount,
+                ds.GetRasterBand(1).DataType,
+            )
+
+            # Calculate the georeferencing information for the output tile
+            tile_geotransform = (
+                geotransform[0] + x_min * geotransform[1],
+                geotransform[1],
+                0,
+                geotransform[3] + y_min * geotransform[5],
+                0,
+                geotransform[5],
+            )
+
+            # Set the geotransform and projection of the tile
+            tile_ds.SetGeoTransform(tile_geotransform)
+            tile_ds.SetProjection(ds.GetProjection())
+
+            # Read the data from the input raster band(s) and write it to the tile band(s)
+            for k in range(ds.RasterCount):
+                band = ds.GetRasterBand(k + 1)
+                tile_band = tile_ds.GetRasterBand(k + 1)
+                tile_data = band.ReadAsArray(x_min, y_min, tile_width, tile_height)
+                tile_band.WriteArray(tile_data)
+
+            # Close the tile dataset
+            tile_ds = None
+
+    # Close the input dataset
+    ds = None
+
+
+def merge_rasters(
+    input_dir,
+    output,
+    input_pattern="*.tif",
+    output_format="GTiff",
+    output_nodata=None,
+    output_options=["COMPRESS=DEFLATE"],
+):
+    """Merge a directory of rasters into a single raster.
+
+    Args:
+        input_dir (str): The path to the input directory.
+        output (str): The path to the output raster.
+        input_pattern (str, optional): The pattern to match the input files. Defaults to "*.tif".
+        output_format (str, optional): The output format. Defaults to "GTiff".
+        output_nodata (float, optional): The output nodata value. Defaults to None.
+        output_options (list, optional): A list of output options. Defaults to ["COMPRESS=DEFLATE"].
+
+    Raises:
+        ImportError: Raised if GDAL is not installed.
+    """
+
+    import glob
+
+    try:
+        from osgeo import gdal
+    except ImportError:
+        raise ImportError(
+            "GDAL is required to use this function. Install it with `conda install gdal -c conda-forge`"
+        )
+    # Get a list of all the input files
+    input_files = glob.glob(os.path.join(input_dir, input_pattern))
+
+    # Merge the input files into a single output file
+    gdal.Warp(
+        output,
+        input_files,
+        format=output_format,
+        dstNodata=output_nodata,
+        options=output_options,
+    )

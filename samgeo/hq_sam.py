@@ -1,13 +1,13 @@
 """
-The source code is adapted from https://github.com/aliaksandr960/segment-anything-eo. Credit to the author Aliaksandr Hancharenka.
+Segment remote sensing imagery with HQ-SAM (High Quality Segment Anything Model).
+See https://github.com/SysCV/sam-hq
 """
 
 import os
 import cv2
 import torch
 import numpy as np
-import pandas as pd
-from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+from segment_anything_hq import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
 from .common import *
 
@@ -23,6 +23,7 @@ class SamGeo:
         automatic=True,
         device=None,
         checkpoint_dir=None,
+        hq=False,
         sam_kwargs=None,
         **kwargs,
     ):
@@ -35,6 +36,7 @@ class SamGeo:
                 The automatic mask generator will segment the entire image, while the input prompts will segment selected objects.
             device (str, optional): The device to use. It can be one of the following: cpu, cuda.
                 Defaults to None, which will use cuda if available.
+            hq (bool, optional): Whether to use the HQ-SAM model. Defaults to False.
             checkpoint_dir (str, optional): The path to the model checkpoint. It can be one of the following:
                 sam_vit_h_4b8939.pth, sam_vit_l_0b3195.pth, sam_vit_b_01ec64.pth.
                 Defaults to None. See https://bit.ly/3VrpxUh for more details.
@@ -56,8 +58,8 @@ class SamGeo:
                 output_mode: str = "binary_mask",
 
         """
-        hq = False  # Not using HQ-SAM
 
+        hq = True  # Using HQ-SAM
         if "checkpoint" in kwargs:
             checkpoint = kwargs["checkpoint"]
             if not os.path.exists(checkpoint):
@@ -121,7 +123,6 @@ class SamGeo:
             mask_multiplier (int, optional): The mask multiplier for the output mask, which is usually a binary mask [0, 1].
                 You can use this parameter to scale the mask to a larger range, for example [0, 255]. Defaults to 255.
         """
-
         h, w, _ = image.shape
 
         masks = self.mask_generator.generate(image)
@@ -142,7 +143,7 @@ class SamGeo:
                 mask_erode = (mask_erode > 0).astype(np.uint8)
                 edge_mask = mask - mask_erode
                 resulting_borders += edge_mask
-   
+
         resulting_mask = (resulting_mask > 0).astype(np.uint8)
         resulting_borders = (resulting_borders > 0).astype(np.uint8)
         resulting_mask_with_borders = resulting_mask - resulting_borders
@@ -154,7 +155,6 @@ class SamGeo:
         output=None,
         foreground=True,
         batch=False,
-        sample_size=(512,512),
         erosion_kernel=None,
         mask_multiplier=255,
         unique=True,
@@ -167,7 +167,6 @@ class SamGeo:
             output (str, optional): The path to the output image. Defaults to None.
             foreground (bool, optional): Whether to generate the foreground mask. Defaults to True.
             batch (bool, optional): Whether to generate masks for a batch of image tiles. Defaults to False.
-            sample size (tuple, optional): size of the square tile used in batch mode
             erosion_kernel (tuple, optional): The erosion kernel for filtering object masks and extract borders.
                 Such as (3, 3) or (5, 5). Set to None to disable it. Defaults to None.
             mask_multiplier (int, optional): The mask multiplier for the output mask, which is usually a binary mask [0, 1].
@@ -177,7 +176,6 @@ class SamGeo:
                 The unique value increases from 1 to the number of objects. The larger the number, the larger the object area.
 
         """
-        print(" You are using a modified version of segment-geospatial library (v 0.10.2 fork)")
 
         if isinstance(source, str):
             if source.startswith("http"):
@@ -194,13 +192,12 @@ class SamGeo:
                     source,
                     output,
                     self,
-                    sample_size=sample_size,
                     foreground=foreground,
                     erosion_kernel=erosion_kernel,
                     mask_multiplier=mask_multiplier,
                     **kwargs,
                 )
-            
+
             image = cv2.imread(source)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif isinstance(source, np.ndarray):
@@ -215,6 +212,7 @@ class SamGeo:
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
         self.batch = False
+
         if output is not None:
             # Save the masks to the output path. The output is either a binary mask or a mask of objects with unique values.
             self.save_masks(
@@ -260,7 +258,7 @@ class SamGeo:
         # Generate a mask of objects with unique values
         if unique:
             # Sort the masks by area in ascending order
-            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=True)
+            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=False)
 
             # Create an output image with the same size as the input image
             objects = np.zeros(
@@ -269,18 +267,10 @@ class SamGeo:
                     sorted_masks[0]["segmentation"].shape[1],
                 )
             )
-
-            # Get detection score and iou for each detection mask !!! NOT WORKING YET !!! 
-            score = [] 
-            iou = [] 
             # Assign a unique value to each object
             for index, ann in enumerate(sorted_masks):
                 m = ann["segmentation"]
                 objects[m] = index + 1
-                score.append(ann["stability_score"])
-                iou.append(ann["predicted_iou"])
-            df = pd.DataFrame({'score': score, 'IOU': iou})
-            # print(df)
 
         # Generate a binary mask
         else:
@@ -308,6 +298,7 @@ class SamGeo:
 
         objects = objects.astype(dtype)
         self.objects = objects
+
         if output is not None:  # Save the output image
             array_to_image(self.objects, output, self.source, **kwargs)
 
@@ -325,15 +316,17 @@ class SamGeo:
         """
 
         import matplotlib.pyplot as plt
+
         if self.batch:
             self.objects = cv2.imread(self.masks)
         else:
             if self.objects is None:
                 self.save_masks(foreground=foreground, **kwargs)
+
         plt.figure(figsize=figsize)
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
-        # plt.show()
+        plt.show()
 
     def show_anns(
         self,
@@ -357,7 +350,6 @@ class SamGeo:
         import matplotlib.pyplot as plt
 
         anns = self.masks
-        # print(anns)
 
         if self.image is None:
             print("Please run generate() first.")
@@ -440,7 +432,7 @@ class SamGeo:
         mask_multiplier=255,
         dtype=np.float32,
         vector=None,
-        simplify_tolerance=0.1,
+        simplify_tolerance=None,
         **kwargs,
     ):
         """Save the predicted mask to the output path.
@@ -725,7 +717,7 @@ class SamGeo:
         image = draw_tile(source, pt1[0], pt1[1], pt2[0], pt2[1], zoom, dist)
         return image
 
-    def raster_to_vector(self, image, output, simplify_tolerance=0.1, **kwargs):
+    def raster_to_vector(self, image, output, simplify_tolerance=None, **kwargs):
         """Save the result to a vector file.
 
         Args:
@@ -737,7 +729,7 @@ class SamGeo:
 
         raster_to_vector(image, output, simplify_tolerance=simplify_tolerance, **kwargs)
 
-    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -751,7 +743,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -765,7 +757,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a shapefile.
 
         Args:
@@ -779,7 +771,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a GeoJSON file.
 
         Args:
