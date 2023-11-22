@@ -200,7 +200,6 @@ class SamGeo:
                     mask_multiplier=mask_multiplier,
                     **kwargs,
                 )
-            
             image = cv2.imread(source)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif isinstance(source, np.ndarray):
@@ -211,6 +210,7 @@ class SamGeo:
 
         self.source = source  # Store the input image path
         self.image = image  # Store the input image as a numpy array
+        
         mask_generator = self.mask_generator  # The automatic mask generator
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
@@ -334,6 +334,7 @@ class SamGeo:
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
         # plt.show()
+        plt.close()
 
     def show_anns(
         self,
@@ -357,7 +358,6 @@ class SamGeo:
         import matplotlib.pyplot as plt
 
         anns = self.masks
-        # print(anns)
 
         if self.image is None:
             print("Please run generate() first.")
@@ -406,6 +406,7 @@ class SamGeo:
             else:
                 array = self.annotations
             array_to_image(array, output, self.source)
+        plt.close()
 
     def set_image(self, image, image_format="RGB"):
         """Set the input image as a numpy array.
