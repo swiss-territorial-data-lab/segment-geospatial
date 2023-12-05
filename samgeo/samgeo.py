@@ -215,7 +215,7 @@ class SamGeo:
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
         self.batch = False
-        if output is not None:
+        if output is not None and len(self.masks) != 0:
             # Save the masks to the output path. The output is either a binary mask or a mask of objects with unique values.
             self.save_masks(
                 output, foreground, unique, erosion_kernel, mask_multiplier, **kwargs
@@ -256,12 +256,11 @@ class SamGeo:
             dtype = np.uint16
         else:
             dtype = np.uint32
-
         # Generate a mask of objects with unique values
         if unique:
             # Sort the masks by area in ascending order
             sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=True)
-
+            
             # Create an output image with the same size as the input image
             objects = np.zeros(
                 (
