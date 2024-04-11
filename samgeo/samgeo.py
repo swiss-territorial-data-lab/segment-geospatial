@@ -7,6 +7,7 @@ import cv2
 import torch
 import numpy as np
 import pandas as pd
+
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
 from .common import *
@@ -167,7 +168,7 @@ class SamGeo:
             output (str, optional): The path to the output image. Defaults to None.
             foreground (bool, optional): Whether to generate the foreground mask. Defaults to True.
             batch (bool, optional): Whether to generate masks for a batch of image tiles. Defaults to False.
-            sample size (tuple, optional): size of the square tile used in batch mode
+            sample size (tuple, optional): size of the square tile used in batch mode.
             erosion_kernel (tuple, optional): The erosion kernel for filtering object masks and extract borders.
                 Such as (3, 3) or (5, 5). Set to None to disable it. Defaults to None.
             mask_multiplier (int, optional): The mask multiplier for the output mask, which is usually a binary mask [0, 1].
@@ -177,7 +178,7 @@ class SamGeo:
                 The unique value increases from 1 to the number of objects. The larger the number, the larger the object area.
 
         """
-        print(" You are using a modified version of segment-geospatial library (v 0.10.2 fork)")
+        print(" You are using a modified version of segment-geospatial library (v 0.10.2 fork)!")
 
         if isinstance(source, str):
             if source.startswith("http"):
@@ -268,18 +269,10 @@ class SamGeo:
                     sorted_masks[0]["segmentation"].shape[1],
                 )
             )
-
-            # Get detection score and iou for each detection mask !!! NOT WORKING YET !!! 
-            score = [] 
-            iou = [] 
             # Assign a unique value to each object
             for index, ann in enumerate(sorted_masks):
                 m = ann["segmentation"]
                 objects[m] = index + 1
-                score.append(ann["stability_score"])
-                iou.append(ann["predicted_iou"])
-            df = pd.DataFrame({'score': score, 'IOU': iou})
-            # print(df)
 
         # Generate a binary mask
         else:
@@ -332,6 +325,7 @@ class SamGeo:
         plt.figure(figsize=figsize)
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
+        ## uncoment to see the pop-up image  
         # plt.show()
         plt.close()
 
@@ -440,7 +434,7 @@ class SamGeo:
         mask_multiplier=255,
         dtype=np.float32,
         vector=None,
-        simplify_tolerance=0.1,
+        simplify_tolerance=None,
         **kwargs,
     ):
         """Save the predicted mask to the output path.
@@ -725,7 +719,7 @@ class SamGeo:
         image = draw_tile(source, pt1[0], pt1[1], pt2[0], pt2[1], zoom, dist)
         return image
 
-    def raster_to_vector(self, image, output, simplify_tolerance=0.1, **kwargs):
+    def raster_to_vector(self, image, output, simplify_tolerance=None, **kwargs):
         """Save the result to a vector file.
 
         Args:
@@ -737,7 +731,7 @@ class SamGeo:
 
         raster_to_vector(image, output, simplify_tolerance=simplify_tolerance, **kwargs)
 
-    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_vector(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -751,7 +745,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_gpkg(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a gpkg file.
 
         Args:
@@ -765,7 +759,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_shp(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a shapefile.
 
         Args:
@@ -779,7 +773,7 @@ class SamGeo:
             tiff_path, output, simplify_tolerance=simplify_tolerance, **kwargs
         )
 
-    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=0.1, **kwargs):
+    def tiff_to_geojson(self, tiff_path, output, simplify_tolerance=None, **kwargs):
         """Convert a tiff file to a GeoJSON file.
 
         Args:
