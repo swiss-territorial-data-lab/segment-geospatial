@@ -6,6 +6,7 @@ import os
 import cv2
 import torch
 import numpy as np
+
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
 from .common import *
@@ -209,11 +210,11 @@ class SamGeo:
 
         self.source = source  # Store the input image path
         self.image = image  # Store the input image as a numpy array
+        
         mask_generator = self.mask_generator  # The automatic mask generator
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
         self.batch = False
-        
         if output is not None and len(self.masks) != 0:
             # Save the masks to the output path. The output is either a binary mask or a mask of objects with unique values.
             self.save_masks(
@@ -255,7 +256,6 @@ class SamGeo:
             dtype = np.uint16
         else:
             dtype = np.uint32
-        
         # Generate a mask of objects with unique values
         if unique:
             # Sort the masks by area in ascending order
@@ -299,7 +299,6 @@ class SamGeo:
 
         objects = objects.astype(dtype)
         self.objects = objects
-        
         if output is not None:  # Save the output image
             array_to_image(self.objects, output, self.source, **kwargs)
 
@@ -322,7 +321,6 @@ class SamGeo:
         else:
             if self.objects is None:
                 self.save_masks(foreground=foreground, **kwargs)
-        
         plt.figure(figsize=figsize)
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
