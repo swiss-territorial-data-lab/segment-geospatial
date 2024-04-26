@@ -177,7 +177,6 @@ class SamGeo:
                 The unique value increases from 1 to the number of objects. The larger the number, the larger the object area.
 
         """
-        print("You are using a modified version of segment-geospatial (forked from v.0.10.2)!")
 
         if isinstance(source, str):
             if source.startswith("http"):
