@@ -177,7 +177,7 @@ class SamGeo:
                 The unique value increases from 1 to the number of objects. The larger the number, the larger the object area.
 
         """
-        print(" You are using a modified version of segment-geospatial library (v 0.10.2 fork)!")
+        print("You are using a modified version of segment-geospatial (forked from v0.10.2)!")
 
         if isinstance(source, str):
             if source.startswith("http"):
@@ -258,7 +258,7 @@ class SamGeo:
             dtype = np.uint32
         # Generate a mask of objects with unique values
         if unique:
-            # Sort the masks by area in ascending order
+            # Sort the masks by area in descending order
             sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=True)
             
             # Create an output image with the same size as the input image
