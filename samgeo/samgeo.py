@@ -6,6 +6,7 @@ import os
 import cv2
 import torch
 import numpy as np
+
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
 
 from .common import *
@@ -120,6 +121,7 @@ class SamGeo:
             mask_multiplier (int, optional): The mask multiplier for the output mask, which is usually a binary mask [0, 1].
                 You can use this parameter to scale the mask to a larger range, for example [0, 255]. Defaults to 255.
         """
+
         h, w, _ = image.shape
 
         masks = self.mask_generator.generate(image)
@@ -140,7 +142,7 @@ class SamGeo:
                 mask_erode = (mask_erode > 0).astype(np.uint8)
                 edge_mask = mask - mask_erode
                 resulting_borders += edge_mask
-
+   
         resulting_mask = (resulting_mask > 0).astype(np.uint8)
         resulting_borders = (resulting_borders > 0).astype(np.uint8)
         resulting_mask_with_borders = resulting_mask - resulting_borders
@@ -152,6 +154,7 @@ class SamGeo:
         output=None,
         foreground=True,
         batch=False,
+        sample_size=(512,512),
         erosion_kernel=None,
         mask_multiplier=255,
         unique=True,
@@ -164,6 +167,7 @@ class SamGeo:
             output (str, optional): The path to the output image. Defaults to None.
             foreground (bool, optional): Whether to generate the foreground mask. Defaults to True.
             batch (bool, optional): Whether to generate masks for a batch of image tiles. Defaults to False.
+            sample size (tuple, optional): size of the square tile used in batch mode.
             erosion_kernel (tuple, optional): The erosion kernel for filtering object masks and extract borders.
                 Such as (3, 3) or (5, 5). Set to None to disable it. Defaults to None.
             mask_multiplier (int, optional): The mask multiplier for the output mask, which is usually a binary mask [0, 1].
@@ -173,6 +177,7 @@ class SamGeo:
                 The unique value increases from 1 to the number of objects. The larger the number, the larger the object area.
 
         """
+        print(" You are using a modified version of segment-geospatial library (v 0.10.2 fork)!")
 
         if isinstance(source, str):
             if source.startswith("http"):
@@ -189,12 +194,12 @@ class SamGeo:
                     source,
                     output,
                     self,
+                    sample_size=sample_size,
                     foreground=foreground,
                     erosion_kernel=erosion_kernel,
                     mask_multiplier=mask_multiplier,
                     **kwargs,
                 )
-
             image = cv2.imread(source)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif isinstance(source, np.ndarray):
@@ -205,12 +210,12 @@ class SamGeo:
 
         self.source = source  # Store the input image path
         self.image = image  # Store the input image as a numpy array
+        
         mask_generator = self.mask_generator  # The automatic mask generator
         masks = mask_generator.generate(image)  # Segment the input image
         self.masks = masks  # Store the masks as a list of dictionaries
         self.batch = False
-
-        if output is not None:
+        if output is not None and len(self.masks) != 0:
             # Save the masks to the output path. The output is either a binary mask or a mask of objects with unique values.
             self.save_masks(
                 output, foreground, unique, erosion_kernel, mask_multiplier, **kwargs
@@ -251,12 +256,11 @@ class SamGeo:
             dtype = np.uint16
         else:
             dtype = np.uint32
-
         # Generate a mask of objects with unique values
         if unique:
             # Sort the masks by area in ascending order
-            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=False)
-
+            sorted_masks = sorted(masks, key=(lambda x: x["area"]), reverse=True)
+            
             # Create an output image with the same size as the input image
             objects = np.zeros(
                 (
@@ -295,7 +299,6 @@ class SamGeo:
 
         objects = objects.astype(dtype)
         self.objects = objects
-
         if output is not None:  # Save the output image
             array_to_image(self.objects, output, self.source, **kwargs)
 
@@ -313,17 +316,17 @@ class SamGeo:
         """
 
         import matplotlib.pyplot as plt
-
         if self.batch:
             self.objects = cv2.imread(self.masks)
         else:
             if self.objects is None:
                 self.save_masks(foreground=foreground, **kwargs)
-
         plt.figure(figsize=figsize)
         plt.imshow(self.objects, cmap=cmap)
         plt.axis(axis)
-        plt.show()
+        ## uncoment to see the pop-up image  
+        # plt.show()
+        plt.close()
 
     def show_anns(
         self,
@@ -395,6 +398,7 @@ class SamGeo:
             else:
                 array = self.annotations
             array_to_image(array, output, self.source)
+        plt.close()
 
     def set_image(self, image, image_format="RGB"):
         """Set the input image as a numpy array.

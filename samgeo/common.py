@@ -934,7 +934,6 @@ def bbox_to_xy(
         geojson = json.dumps(coords)
         gdf = gpd.read_file(geojson, driver="GeoJSON")
         coords = gdf.geometry.bounds.values.tolist()
-
     elif not isinstance(coords, list):
         raise ValueError("coords must be a list of coordinates.")
 
@@ -1112,7 +1111,6 @@ def tiff_to_tiff(
         rh, rw = profile["height"], profile["width"]
         sh, sw = sample_size
         bound = bound
-
         resize_hw = sample_resize
 
         # Subdivide image into tiles
@@ -1209,6 +1207,7 @@ def tiff_to_shapes(tiff_path, simplify_tolerance=None):
         mask = band != 0
         shapes = features.shapes(band, mask=mask, transform=src.transform)
     result = [shapely.geometry.shape(shape) for shape, _ in shapes]
+
     if simplify_tolerance is not None:
         result = [shape.simplify(tolerance=simplify_tolerance) for shape in result]
     return result
@@ -1239,11 +1238,11 @@ def raster_to_vector(source, output, simplify_tolerance=None, dst_crs=None, **kw
         simplify_tolerance (float, optional): The maximum allowed geometry displacement.
             The higher this value, the smaller the number of vertices in the resulting geometry.
     """
+    
     from rasterio import features
 
     with rasterio.open(source) as src:
         band = src.read()
-
         mask = band != 0
         shapes = features.shapes(band, mask=mask, transform=src.transform)
 
@@ -1251,6 +1250,7 @@ def raster_to_vector(source, output, simplify_tolerance=None, dst_crs=None, **kw
         {"geometry": shapely.geometry.shape(shape), "properties": {"value": value}}
         for shape, value in shapes
     ]
+
     if simplify_tolerance is not None:
         for i in fc:
             i["geometry"] = i["geometry"].simplify(tolerance=simplify_tolerance)
